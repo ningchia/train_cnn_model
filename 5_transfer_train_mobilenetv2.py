@@ -1,5 +1,8 @@
 import torch
 import torch.nn as nn
+# 移除冗餘的 class MobileNetTransfer 定義，改為導入：
+from model_defs import MobileNetTransfer
+
 import torch.optim as optim
 from torchvision import datasets, transforms
 import torchvision.models as models # <--- 新增：導入 torchvision models
@@ -23,32 +26,6 @@ BATCH_SIZE = 32
 # 遷移學習時，基礎層使用極小的學習率，或只訓練分類頭部
 TRANSFER_LEARNING_LR = 0.0001 
 FINE_TUNE_LR = 0.00001 # 較低的學習率用於解凍全部參數時
-
-# --- 2. 模型定義：MobileNetV2 遷移學習模型 ---
-class MobileNetTransfer(nn.Module):
-    def __init__(self, num_classes):
-        super(MobileNetTransfer, self).__init__()
-        
-        # 載入預訓練的 MobileNetV2，使用 ImageNet 權重
-        self.base_model = models.mobilenet_v2(weights=models.MobileNet_V2_Weights.IMAGENET1K_V1)
-        
-        # 凍結所有基礎特徵提取層的權重
-        for param in self.base_model.parameters():
-            param.requires_grad = False
-            
-        # 替換分類器頭部 (Classifier Head)
-        # MobileNetV2 的分類器是 self.base_model.classifier
-        # 獲取原始分類器輸入的特徵數
-        num_ftrs = self.base_model.classifier[-1].in_features
-        
-        # 建立新的分類器，只有這個分類器會被訓練
-        self.base_model.classifier = nn.Sequential(
-            nn.Dropout(0.2), 
-            nn.Linear(num_ftrs, num_classes)
-        )
-
-    def forward(self, x):
-        return self.base_model(x)
 
 # --- 3. 數據加載：CustomSplitDataset (保持不變) ---
 class CustomSplitDataset(Dataset):

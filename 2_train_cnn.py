@@ -1,5 +1,8 @@
 import torch
 import torch.nn as nn
+# --- 新增: 從 model_defs 模組導入模型結構 ---
+from model_defs import CleanCNN
+
 import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, Dataset
@@ -21,39 +24,6 @@ NUM_EPOCHS = 300 # 總 Epoch 數 (新的總數，從 start_epoch 開始累加)
 BATCH_SIZE = 32
 LEARNING_RATE = 0.001
 TRANSFER_LEARNING_LR = 0.0001 # 遷移學習時，如果解凍，使用較低的 LR
-
-# --- 2. 模型定義：CleanCNN (已修正結構 - 移除冗餘 MaxPool) ---
-class CleanCNN(nn.Module):
-    def __init__(self, num_classes=3):
-        super(CleanCNN, self).__init__()
-        FINAL_CHANNELS = 64
-        self.model = nn.Sequential(
-            # 第一組 Conv + BN + ReLU
-            nn.Conv2d(3, 16, kernel_size=3, padding=1),
-            nn.BatchNorm2d(16), 
-            nn.ReLU(), 
-            nn.MaxPool2d(2),
-            
-            # 第二組 Conv + BN + ReLU
-            nn.Conv2d(16, 32, kernel_size=3, padding=1),
-            nn.BatchNorm2d(32), 
-            nn.ReLU(), 
-            nn.MaxPool2d(2),
-            
-            # 第三組 Conv + BN + ReLU
-            nn.Conv2d(32, FINAL_CHANNELS, kernel_size=3, padding=1),
-            nn.BatchNorm2d(FINAL_CHANNELS), 
-            nn.ReLU(), 
-            # nn.MaxPool2d(2), # <--- 已移除這個冗餘層
-            
-            nn.AdaptiveAvgPool2d(1), # <--- 直接連接到 Global Average Pool
-            
-            nn.Flatten(),
-            nn.Linear(FINAL_CHANNELS, num_classes)
-        )
-
-    def forward(self, x):
-        return self.model(x)
 
 # --- 3. 數據加載：CustomSplitDataset (已修正 nothing-train 擴增邏輯) ---
 class CustomSplitDataset(Dataset):

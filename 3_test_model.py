@@ -1,5 +1,8 @@
 import torch
 import torch.nn as nn
+# --- 新增: 從 model_defs 模組導入模型結構 ---
+from model_defs import CleanCNN
+
 from torchvision import transforms
 import cv2
 import numpy as np
@@ -15,37 +18,6 @@ CHECKPOINT_FILE = "latest_checkpoint.pth"
 CHECKPOINT_PATH = os.path.join(MODEL_SAVE_PATH, CHECKPOINT_FILE)
 NUM_CLASSES = 3  # nothing, hand, cup
 CLASS_NAMES = ["nothing", "hand", "cup"] # 必須與模型訓練時的索引順序一致
-
-# --- 2. 模型定義：CleanCNN (必須複製訓練腳本中的定義) ---
-class CleanCNN(nn.Module):
-    def __init__(self, num_classes=3):
-        super(CleanCNN, self).__init__()
-        FINAL_CHANNELS = 64
-        self.model = nn.Sequential(
-            # 第一組 Conv + BN + ReLU (已修正，用於載入正確的權重結構)
-            nn.Conv2d(3, 16, kernel_size=3, padding=1),
-            nn.BatchNorm2d(16), 
-            nn.ReLU(), 
-            nn.MaxPool2d(2),
-            
-            # 第二組 Conv + BN + ReLU
-            nn.Conv2d(16, 32, kernel_size=3, padding=1),
-            nn.BatchNorm2d(32), 
-            nn.ReLU(), 
-            nn.MaxPool2d(2),
-            
-            # 第三組 Conv + BN + ReLU (已移除冗餘 MaxPool)
-            nn.Conv2d(32, FINAL_CHANNELS, kernel_size=3, padding=1),
-            nn.BatchNorm2d(FINAL_CHANNELS), 
-            nn.ReLU(), 
-            nn.AdaptiveAvgPool2d(1), 
-            
-            nn.Flatten(),
-            nn.Linear(FINAL_CHANNELS, num_classes)
-        )
-
-    def forward(self, x):
-        return self.model(x)
 
 # --- 3. 影像預處理函式 ---
 def get_transform():
