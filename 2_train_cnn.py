@@ -12,6 +12,9 @@ import time
 from PIL import Image
 import warnings
 
+import numpy as np
+import random
+
 # 忽略 PIL/Image 庫可能發出的警告
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -23,7 +26,40 @@ CHECKPOINT_FILE = "latest_checkpoint.pth"  # 統一檢查點檔案名稱
 NUM_EPOCHS = 300 # 總 Epoch 數 (新的總數，從 start_epoch 開始累加)
 BATCH_SIZE = 32
 LEARNING_RATE = 0.001
-TRANSFER_LEARNING_LR = 0.0001 # 遷移學習時，如果解凍，使用較低的 LR
+TRANSFER_LEARNING_LR = 0.0001   # 遷移學習時，如果解凍，使用較低的 LR
+
+WANT_REPRODUCEBILITY = False    # 是否要強化訓練結果的可重現性 (Reproducibility)
+SEED = 42
+
+# 如果要讓每次訓練結果盡可能一致（即提高可重現性），需要將所有涉及隨機性的組件都鎖定 (Lock Down)。
+def set_seed(seed_value=42):
+    """ 
+    設定所有隨機性的種子，確保結果可重現。 
+    """
+    print("設定所有隨機性的種子，確保結果可重現。")
+    random.seed(seed_value)         # Python 內建的 random 模組
+    np.random.seed(seed_value)      # NumPy 模組
+    torch.manual_seed(seed_value)   # PyTorch CPU 隨機數生成器
+    
+    # 僅在 CUDA 可用時設定 GPU 種子和 cuDNN 參數
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed_value)      # 為所有 GPU 設定種子
+        
+        # 確保 cuDNN 運算是確定性的 (犧牲輕微性能換取精確復現)
+        torch.backends.cudnn.deterministic = True   # 強制 cuDNN 使用確定性算法
+        torch.backends.cudnn.benchmark = False      # 關閉自動尋優
+    
+    # 確保 DataLoader 的 Worker 也能有固定的種子
+    # 這是 DataLoader 內多進程隨機性的補充設置
+    def seed_worker(worker_id):
+        worker_seed = seed_value + worker_id
+        random.seed(worker_seed)
+        np.random.seed(worker_seed)
+        
+    g = torch.Generator()
+    g.manual_seed(seed_value)
+    
+    return seed_worker, g # 返回 worker_init_fn 和 generator 給 DataLoader 使用
 
 # --- 3. 數據加載：CustomSplitDataset (已修正 nothing-train 擴增邏輯) ---
 class CustomSplitDataset(Dataset):
@@ -143,14 +179,20 @@ val_transform = transforms.Compose([
 ])
 
 def get_loaders(data_dir, batch_size):
-    # 這裡無需修改 (原第 113 行)，因為 CustomSplitDataset 已處理優先級邏輯
     train_dataset = CustomSplitDataset(data_dir, 'train', train_transform)
     val_dataset = CustomSplitDataset(data_dir, 'validate', val_transform)
-    
+
     if len(train_dataset) == 0 or len(val_dataset) == 0:
          raise ValueError(f"訓練集或驗證集為空。訓練集: {len(train_dataset)}, 驗證集: {len(val_dataset)}")
     
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
+    # 保持 num_workers=4 以加快數據加載速度
+    if not WANT_REPRODUCEBILITY:
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
+    else:
+        # 若要強化訓練結果的可重現性則用下面的設定
+        worker_init_fn, generator = set_seed(SEED)
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4, worker_init_fn=worker_init_fn, generator=generator)
+    
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
     
     return train_loader, val_loader, len(train_dataset.classes)
