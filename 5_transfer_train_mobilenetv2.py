@@ -27,6 +27,8 @@ BATCH_SIZE = 32
 TRANSFER_LEARNING_LR = 0.0001 
 FINE_TUNE_LR = 0.00001          # 較低的學習率用於解凍全部參數時
 
+USE_PRETRAINED = True           # 是否使用預訓練權重. False : 只使用架構，隨機初始化權重.
+
 WANT_REPRODUCEBILITY = False    # 是否要強化訓練結果的可重現性 (Reproducibility)
 SEED = 42
 
@@ -257,15 +259,19 @@ def freeze_base_layers(model, freeze=True):
 # --- 6. 訓練流程主函式 (優化器調整) ---
 def train_model(train_loader, val_loader, model, total_epochs, start_epoch, initial_best_acc):
     
-    # 決定優化器的學習率
-    if start_epoch == 0:
-        # 第一階段：只訓練分類頭部 (基礎層已在 __init__ 中凍結)
-        lr = TRANSFER_LEARNING_LR
-        print(f"初始化學習率 (僅分類頭): {lr}")
+    if USE_PRETRAINED:
+        # 決定優化器的學習率
+        if start_epoch == 0:
+            # 第一階段：只訓練分類頭部 (基礎層已在 __init__ 中凍結)
+            lr = TRANSFER_LEARNING_LR
+            print(f"初始化學習率 (僅分類頭): {lr}")
+        else:
+            # 斷點續訓，假設已經在微調階段
+            lr = FINE_TUNE_LR
+            print(f"續訓學習率 (微調模式): {lr}")
     else:
-        # 斷點續訓，假設已經在微調階段
-        lr = FINE_TUNE_LR
-        print(f"續訓學習率 (微調模式): {lr}")
+        lr = TRANSFER_LEARNING_LR
+        print(f"從頭訓練, 學習率: {lr}")
         
     # 優化器只追蹤 requires_grad=True 的參數 (即未凍結的分類器)
     optimizer = optim.Adam(
@@ -389,7 +395,12 @@ if __name__ == '__main__':
         print(f"偵測到類別數量: {num_classes_detected}")
         
         # 步驟 1: 初始化模型
-        model = MobileNetTransfer(num_classes=num_classes_detected).to(device)
+        if USE_PRETRAINED:
+            print("使用預訓練權重初始化模型。")
+        else:
+            print("不使用預訓練權重，模型權重將隨機初始化。")
+        model = MobileNetTransfer(num_classes=num_classes_detected, use_pretrained=USE_PRETRAINED).to(device)
+        
         # 初始化優化器（用於 load_checkpoint 載入狀態）
         initial_optimizer = optim.Adam(model.parameters(), lr=TRANSFER_LEARNING_LR) 
 
@@ -397,13 +408,14 @@ if __name__ == '__main__':
         start_epoch, best_accuracy, is_resumed = load_checkpoint(checkpoint_path, model, initial_optimizer)
         
         # 步驟 3: 確保模型凍結狀態正確
-        # 如果是從頭開始或剛載入檢查點，需要確保基礎層是凍結的，除非已進入微調階段
-        if start_epoch <= 100:
-             # 如果尚未進入微調階段，確保基礎層處於凍結狀態 (只訓練分類器)
-            freeze_base_layers(model, freeze=True)
-        else:
-             # 如果從超過 100 Epoch 的地方續訓，預設進入微調
-             freeze_base_layers(model, freeze=False)
+        if USE_PRETRAINED:
+            # 如果是從頭開始或剛載入檢查點，需要確保基礎層是凍結的，除非已進入微調階段
+            if start_epoch <= 100:
+                # 如果尚未進入微調階段，確保基礎層處於凍結狀態 (只訓練分類器)
+                freeze_base_layers(model, freeze=True)
+            else:
+                # 如果從超過 100 Epoch 的地方續訓，預設進入微調
+                freeze_base_layers(model, freeze=False)
              
         # 步驟 4: 開始訓練
         train_model(train_loader, val_loader, model, NUM_EPOCHS, start_epoch, best_accuracy)
