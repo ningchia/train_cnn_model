@@ -13,6 +13,8 @@ import time
 from PIL import Image
 import warnings
 
+# import psutil     # 用於系統資源監控
+
 # 忽略 PIL/Image 庫可能發出的警告
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -31,6 +33,61 @@ USE_PRETRAINED = True           # 是否使用預訓練權重. False : 只使用
 
 WANT_REPRODUCEBILITY = False    # 是否要強化訓練結果的可重現性 (Reproducibility)
 SEED = 42
+
+# 嘗試導入 pynvml (NVIDIA Management Library Python Bindings)
+# 這種紀錄法是在epoch結束的時候紀錄, 當時GPU與CPU都沒有在進行訓練工作所以不準.
+'''
+try:
+    from pynvml import *
+    NVML_AVAILABLE = True
+except ImportError:
+    # print("警告: 未安裝 pynvml 函式庫，無法監控 GPU 資訊。")
+    NVML_AVAILABLE = False
+    
+# 如果使用 CUDA，初始化 NVML
+if NVML_AVAILABLE and torch.cuda.is_available():
+    try:
+        nvmlInit()
+    except Exception as e:
+        # print(f"警告: NVML 初始化失敗: {e}")
+        NVML_AVAILABLE = False
+
+def get_resource_usage(device: torch.device):
+    """
+    獲取 CPU, 記憶體和 GPU 的使用率。
+    """
+    metrics = {}
+
+    # --- 1. CPU 和 記憶體 ---
+    process = psutil.Process(os.getpid())
+    
+    # 獲取進程的 CPU 使用率百分比
+    # 注意: process.cpu_percent() 需要呼叫兩次來獲取非零值
+    # 為簡化，我們只使用總體 CPU 使用率
+    metrics['cpu_total_percent'] = psutil.cpu_percent(interval=None) 
+    
+    # 獲取進程使用的記憶體 (MB)
+    metrics['mem_used_mb'] = process.memory_info().rss / (1024 * 1024) 
+    
+    # --- 2. GPU 監控 (僅限 CUDA) ---
+    if device.type == 'cuda' and NVML_AVAILABLE:
+        try:
+            # 假設使用第一個 GPU (Index 0)
+            handle = nvmlDeviceGetHandleByIndex(device.index if device.index is not None else 0)
+            
+            # 獲取 GPU 使用率 (Compute / Graphics Utilization)
+            metrics['gpu_util_percent'] = nvmlDeviceGetUtilizationRates(handle).gpu
+            
+            # 獲取 GPU 記憶體使用情況
+            mem_info = nvmlDeviceGetMemoryInfo(handle)
+            metrics['gpu_mem_used_mb'] = mem_info.used / (1024 * 1024)
+            metrics['gpu_mem_total_mb'] = mem_info.total / (1024 * 1024)
+            
+        except Exception as e:
+            metrics['gpu_error'] = str(e)
+            
+    return metrics
+'''
 
 # 如果要讓每次訓練結果盡可能一致（即提高可重現性），需要將所有涉及隨機性的組件都鎖定 (Lock Down)。
 def set_seed(seed_value=42):
@@ -360,6 +417,21 @@ def train_model(train_loader, val_loader, model, total_epochs, start_epoch, init
 
             print(print_message)
 
+            # 這種紀錄法是在epoch結束的時候紀錄, 當時GPU與CPU都沒有在進行訓練工作所以不準.
+            # 範例調用 (在訓練腳本內)
+            '''
+            if epoch % 5 == 0: # 每 5 個 Epoch 報告一次
+                usage = get_resource_usage(device)
+                
+                print(f"[{time.strftime('%H:%M:%S')}] 資源使用情況:")
+                print(f"  CPU 總體使用率: {usage.get('cpu_total_percent', 'N/A'):.2f}%")
+                
+                if 'gpu_util_percent' in usage:
+                    print(f"  GPU 使用率: {usage['gpu_util_percent']}%")
+                    print(f"  GPU 記憶體: {usage['gpu_mem_used_mb']:.2f}MB / {usage['gpu_mem_total_mb']:.2f}MB")
+                print(f"  程式記憶體 (RSS): {usage['mem_used_mb']:.2f}MB")
+            '''
+            
     except KeyboardInterrupt:
         print("\n\n*** [使用者中斷] 偵測到 Ctrl+C，提前結束訓練。 ***")
         save_checkpoint(epoch, model, optimizer, best_accuracy, checkpoint_path)
