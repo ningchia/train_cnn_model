@@ -44,7 +44,7 @@ def export_to_onnx(checkpoint_path, onnx_output_path, num_classes=3):
         dummy_input,         # 模型的虛擬輸入
         onnx_output_path,    # 輸出檔案名稱
         export_params=True,  # 導出訓練好的參數/權重
-        opset_version=17,    # ONNX 標準版本
+        opset_version=18,    # ONNX 標準版本
         do_constant_folding=True, # 優化常數折疊
         input_names = ['input'],   # 輸入名稱
         output_names = ['output'], # 輸出名稱
